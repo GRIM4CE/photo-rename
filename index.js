@@ -1,96 +1,56 @@
-import axios from 'axios'
 import fs from 'fs'
+import { stringify } from 'querystring'
 
-import 'dotenv/config'
+const dist = './dist'
+const src = './src'
 
-const seriesId = 73903
-const seriesOrderType = 2
-const seasonNmb = 4
-const epDir = './dest'
-
-const $axios = axios.create({
-  baseURL: 'https://api4.thetvdb.com/v4/'
-})
-
-const getTokenFromFile = () => {
-  try {
-    return fs.readFileSync('./token.txt', 'utf8')
-  }
-  catch {
-    return ''
-  }
-}
-
-const writeToken = (token) => {
-  fs.writeFile('./token.txt', token, err => {
-    if (err) {
-      console.error(err)
-      return
-    }
-  })
-}
-
-const authenticate = async () => {
-  return $axios.post('login', {
-    apikey: process.env.API_KEY,
-    pin: process.env.PIN
-  }).then((res) => res.data)
+const dateMap = {
+  january: 1,
+  february: 2,
+  march: 3,
+  april: 4,
+  may: 5,
+  june: 6,
+  july: 7,
+  august: 8,
+  september: 9,
+  october: 10,
+  november: 11,
+  december: 12,
 }
 
 
-const setToken = (token) => {
-  $axios.defaults.headers.common['Authorization'] = `Bearer ${token}`
+const normalizeName = (name) => {
+  return (name.replace(/\s+/g, '-').toLowerCase())
 }
 
-// login
-const getAuthToken = async () => {
-  try {
-    let token = getTokenFromFile() || ''
-    if(!token) {
-      const res = await authenticate()
-      token = res.data.token
-      writeToken(token)
-    }
-    setToken(token)
-  } catch(e) {
-    console.log(e)
-  }
+const normalizeDate = (date) => {
+  let tmpDate = date.replace(',', '')
+  const [month, day, year] = tmpDate.split(' ')
+  return `${year}-${dateMap[(month.toLowerCase())]}-${day}`
 }
-
-const getSeries = async (id) => {
-  return await $axios.get('series/73903/extended').then(res => res.data)
-}
-
-const getSeason = async() => {
-  const { data } = await getSeries(seriesId)
-  const seasonId = data.seasons.find(season => {
-    return (season.type.id === seriesOrderType && season.number === seasonNmb)
-  }).id
-
-  return $axios.get(`seasons/${seasonId}/extended`).then(res => res.data)
-}
-
-const getEpisodeList = async () => {
-  const { data } = await getSeason()
-
-  const episodeArray = data.episodes.map(episode => {
-    const { seasonNumber: s, number: e, name } = episode
-    const season = s < 10 ? `0${s}` : s
-    const number = e < 10 ? `0${e}` : e
-    return `s${season}e${number} - ${name}`
-  })
-  return episodeArray
-}
-
 
 const init = async () => {
-  await getAuthToken()
-  const episodeNames = (await getEpisodeList());
-  const files = fs.readdirSync(epDir)
-  if(!episodeNames.length || files.length !== episodeNames.length) return
-  files.forEach((file, i) => {
-    fs.rename(`${epDir}/${file}`, `${epDir}/${episodeNames[i]}.mkv`, (err) => {
-      if(err) { console.log(err) }
+  const folders = fs.readdirSync(src)
+
+  folders.some((folder, i) => {
+    let title =''
+    let tmpFolder = folder
+    if([...folder.matchAll( /,/g)].length > 1) {
+      const index = folder.indexOf(',')
+      title = normalizeName(folder.substring(0, index))
+      tmpFolder = folder.substring(index + 2)
+    }
+    const date = normalizeDate(tmpFolder)
+    let baseName = title ? `${date}-${title}` : date
+    const files = (fs.readdirSync(`${src}/${folder}`)).filter(file => file.charAt(0) !== '.')
+    files.forEach((file, i) => {
+      const ext = file.substring(file.lastIndexOf('.') + 1);
+      const rename = `${baseName}-${i}.${ext}`
+      fs.rename(`${src}/${folder}/${file}`, `${dist}/${rename}`, (err) => {
+        if(err) console.log(err)
+        else console.log(`${dist}/${rename}`)
+      })
     })
   })
 }
